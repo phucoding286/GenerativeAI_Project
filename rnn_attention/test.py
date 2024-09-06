@@ -7,9 +7,9 @@ from __training import trainer
 import numpy as np
 
 
-x = torch.tensor(np.random.randint(1, 50, size=(10, 50))).to(device)
-y = torch.tensor(np.random.randint(1, 50, size=(10, 50))).to(device)
-padding = torch.zeros((10, 5)).to(device)
+x = torch.tensor(np.random.randint(1, 50, size=(100, 50))).to(device)
+y = torch.tensor(np.random.randint(1, 50, size=(100, 50))).to(device)
+padding = torch.zeros((100, 5)).to(device)
 x = torch.concatenate([x, padding], -1).long().to(device)
 y = torch.concatenate([y, padding], -1).long().to(device)
 
