@@ -54,8 +54,8 @@ class ModelT1(nn.Module):
 
     
     def forward(self, x, y):
-        src_mask = create_key_mask(sz=25, device=device)
-        tgt_mask = create_key_mask(sz=25, device=device)
+        src_mask = create_key_mask(sz=x.shape[1], device=device)
+        tgt_mask = create_key_mask(sz=y.shape[1], device=device)
         src_key_padding_mask = create_key_padding_mask(x, device)
         tgt_key_padding_mask = create_key_padding_mask(y, device)
         x = self.position_embedding(x)
@@ -68,28 +68,58 @@ class ModelT1(nn.Module):
             tgt_key_padding_mask=tgt_key_padding_mask
         )
         return self.linear_out(x)
+    
 
-x = torch.tensor(np.random.randint(1, 20, size=(10, 20))).to(device)
-y = torch.tensor(np.random.randint(1, 20, size=(10, 20))).to(device)
-padding = torch.zeros((10, 5)).to(device)
-x = torch.concatenate([x, padding], -1).long().to(device)
-y = torch.concatenate([y, padding], -1).long().to(device)
+
+from tokenizer_ml import TokenizerML
+
+with open("./model-t1 (torch) (transformer) (deverloping)/source_sequences.txt", "r",\
+encoding="utf8") as f: x_train = f.read().splitlines()[:10]
+with open("./model-t1 (torch) (transformer) (deverloping)/target_sequences.txt", "r",\
+encoding="utf8") as f: y_train = f.read().splitlines()[:10]
+
+tokenizer_model = TokenizerML(
+    x_train,
+    y_train,
+    max_len_char=5,
+    padding=50,
+    num_models=3
+)
 
 model = ModelT1(
-    sequence_length=25,
-    vocab_size=21,
+    sequence_length=tokenizer_model.padding,
+    vocab_size=len(tokenizer_model.vocabuliary_dict_to_idx),
     embedding_dim=512,
     embed_dropout=0.1,
     padding_idx=0,
     d_model=512,
     num_heads=16,
-    num_encoder_layers=6,
-    num_decoder_layers=6,
-    dim_feedforward=2048,
+    num_encoder_layers=3,
+    num_decoder_layers=3,
+    dim_feedforward=700,
     transformer_dropout=0.1,
 )
-model.load_state_dict(torch.load("./model-t1 (torch) (transformer) (deverloping)/model_t1.pt"))
-trainer(x, y, model, vocab_size=21, epochs=10, batch_size=16, lr=0.001, device=device)
-# torch.save(model.state_dict(), "./model-t1 (torch) (transformer) (deverloping)/model_t1.pt")
 
-print(torch.argmax(model(x, y), -1))
+x = torch.tensor(tokenizer_model.x_sequences_batch)
+y = torch.tensor(tokenizer_model.y_sequences_batch)
+
+# model.load_state_dict(torch.load("./model-t1 (torch) (transformer) (deverloping)/model_t1.pt"))
+trainer(
+    x,
+    y,
+    model,
+    vocab_size=len(tokenizer_model.vocabuliary_dict_to_idx),
+    epochs=1,
+    batch_size=16,
+    lr=0.001,
+    device=device,
+    output_testing=True,
+    tokenizer_model=tokenizer_model
+)
+torch.save(model.state_dict(), "./model-t1 (torch) (transformer) (deverloping)/model_t1.pt")
+
+x_test = torch.tensor(tokenizer_model.encode_input(["hi"])).long()
+y_test = torch.tensor([[1] + [0 for _ in range(x_test.shape[1]-1)]]).long()
+
+output = torch.argmax(model(x_test, y_test), -1)
+print(tokenizer_model.decode_output(output))

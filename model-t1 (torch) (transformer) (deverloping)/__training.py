@@ -12,7 +12,9 @@ def trainer(
         shuffle: bool = True,
         lr: float = 0.0001,
         ignore_index: int = 0,
-        device: Optional[torch.device] = None
+        device: Optional[torch.device] = None,
+        output_testing=False,
+        tokenizer_model=None
     ):
         train_dataset = TensorDataset(x_sequence.to(device), y_sequence.to(device))
         val_dataset = TensorDataset(x_sequence.to(device), y_sequence.to(device))
@@ -39,4 +41,10 @@ def trainer(
                 total_loss += loss.item()
                 print(f"STEP: {step_counter} with LOSS: {loss.item()}")
                 step_counter += 1
+            
+            if output_testing:
+                y_test = torch.tensor([[1] + [0 for _ in range(x_sequence.shape[1]-1)]]).long().to(device)
+                output_test = model(x_sequence[:1, :], y_test)
+                output_test = torch.argmax(output_test, -1)
+                print(tokenizer_model.decode_output(output_test))
             print(f"EPOCH: {epoch} completed all of steps current LOSS: {total_loss / len(val_loader)}")
