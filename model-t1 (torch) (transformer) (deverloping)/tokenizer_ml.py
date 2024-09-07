@@ -83,14 +83,16 @@ class TokenizerML:
                 self.vocabuliary_dict_idx_to[self.count] = vocab
                 self.vocabuliary_dict_to_idx[vocab] = self.count
                 self.count += 1
-        for token in self.tokens:
-            self.vocabuliary_dict_idx_to[self.count] = token
-            self.vocabuliary_dict_to_idx[token] = self.count
-            self.count += 1
+        if self.tokens is not None:
+            for token in self.tokens:
+                self.vocabuliary_dict_idx_to[self.count] = token
+                self.vocabuliary_dict_to_idx[token] = self.count
+                self.count += 1
         for batch_idx in range(len(self.x_train)):
             x_sequence = [self.vocabuliary_dict_to_idx[vocab] for vocab in self.x_train[batch_idx].split()]
             y_sequence = [self.vocabuliary_dict_to_idx[vocab] for vocab in self.y_train[batch_idx].split()]
-            y_sequence = [self.vocabuliary_dict_to_idx['<start>']] + y_sequence + [self.vocabuliary_dict_to_idx['<end>']]
+            if self.tokens is not None:
+                y_sequence = [self.vocabuliary_dict_to_idx['<start>']] + y_sequence + [self.vocabuliary_dict_to_idx['<end>']]
             if len(x_sequence) > self.padding:
                 x_sequence = x_sequence[:self.padding]
             else:
