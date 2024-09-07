@@ -12,11 +12,12 @@ class TokenizerML:
         self.padding = padding
         self.x_train = x_train
         self.y_train = y_train
-        self.vocabuliary_dict_to_idx = {"<pad>": 0, "<start>": 1, "<end>": 2}
-        self.vocabuliary_dict_idx_to = {0: "<pad>", 1: "<start>", 2: "<end>"}
+        self.vocabuliary_dict_to_idx = {"<pad>": 0}
+        self.vocabuliary_dict_idx_to = {0: "<pad>"}
         self.x_sequences_batch = []
         self.y_sequences_batch = []
-        self.count = 3
+        self.count = 1
+        self.tokens = ["<start>", "<end>"]
         self.char_list = list("""`°–û1Čö23→45Ü678Û€9÷ü0-=qÖwertyuiop[]\\asdfghjk;'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP}{ASDFGHJKL:"ZXCVBNM<>? éèẹẽẻêểễệếềýỵỳỷỹúùụũủứừựữửịỉĩìílóòọõỏốồộôỗổớờợỡởáàạãảấậầẫẩắằặẵẳâđÉÈẸẼẺÊỂỄỆẾỀÝỴỲỶỸÚÙỤŨỦỨỪỰỮỬỊỈĨÌÍLÓÒỌÕỎỐỒỘÔỖỔỚỜỢỠỞÁÀÂẠÃẢẤẬẦẪẨẮẰẶẴẲĐ""")
         self.punctions = list("""`°–ûČö→ÜÛ€÷ü-=Ö[]\\;',./~!@#$%^&*()_+}{:"<>?""")
         self.char_dict = {self.char_list[i]: i for i in range(len(self.char_list))}
@@ -82,6 +83,10 @@ class TokenizerML:
                 self.vocabuliary_dict_idx_to[self.count] = vocab
                 self.vocabuliary_dict_to_idx[vocab] = self.count
                 self.count += 1
+        for token in self.tokens:
+            self.vocabuliary_dict_idx_to[self.count] = token
+            self.vocabuliary_dict_to_idx[token] = self.count
+            self.count += 1
         for batch_idx in range(len(self.x_train)):
             x_sequence = [self.vocabuliary_dict_to_idx[vocab] for vocab in self.x_train[batch_idx].split()]
             y_sequence = [self.vocabuliary_dict_to_idx[vocab] for vocab in self.y_train[batch_idx].split()]
@@ -92,7 +97,7 @@ class TokenizerML:
                 for _ in range(len(x_sequence), self.padding):
                     x_sequence.append(0)
             if len(y_sequence) > self.padding:
-                y_sequence = y_sequence[:self.padding]
+                y_sequence = y_sequence[:self.padding-1] + [self.vocabuliary_dict_to_idx['<end>']]
             else:
                 for _ in range(len(y_sequence), self.padding):
                     y_sequence.append(0)

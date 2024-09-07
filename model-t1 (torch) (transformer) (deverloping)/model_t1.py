@@ -74,9 +74,9 @@ class ModelT1(nn.Module):
 from tokenizer_ml import TokenizerML
 
 with open("./model-t1 (torch) (transformer) (deverloping)/source_sequences.txt", "r",\
-encoding="utf8") as f: x_train = f.read().splitlines()[:10]
+encoding="utf8") as f: x_train = f.read().splitlines()[:1000]
 with open("./model-t1 (torch) (transformer) (deverloping)/target_sequences.txt", "r",\
-encoding="utf8") as f: y_train = f.read().splitlines()[:10]
+encoding="utf8") as f: y_train = f.read().splitlines()[:1000]
 
 tokenizer_model = TokenizerML(
     x_train,
@@ -94,16 +94,17 @@ model = ModelT1(
     padding_idx=0,
     d_model=512,
     num_heads=16,
-    num_encoder_layers=3,
-    num_decoder_layers=3,
-    dim_feedforward=700,
+    num_encoder_layers=1,
+    num_decoder_layers=1,
+    dim_feedforward=1024,
     transformer_dropout=0.1,
+    device=device
 )
 
 x = torch.tensor(tokenizer_model.x_sequences_batch)
 y = torch.tensor(tokenizer_model.y_sequences_batch)
 
-# model.load_state_dict(torch.load("./model-t1 (torch) (transformer) (deverloping)/model_t1.pt"))
+model.load_state_dict(torch.load("./model-t1 (torch) (transformer) (deverloping)/model_t1.pt", map_location=torch.device('cpu')))
 trainer(
     x,
     y,
@@ -113,13 +114,14 @@ trainer(
     batch_size=16,
     lr=0.001,
     device=device,
-    output_testing=True,
+    output_testing=False,
     tokenizer_model=tokenizer_model
 )
 torch.save(model.state_dict(), "./model-t1 (torch) (transformer) (deverloping)/model_t1.pt")
 
-x_test = torch.tensor(tokenizer_model.encode_input(["hi"])).long()
-y_test = torch.tensor([[1] + [0 for _ in range(x_test.shape[1]-1)]]).long()
+x_test = torch.tensor(tokenizer_model.encode_input(["hi how are you?"])).long()
+y_test = torch.tensor([[tokenizer_model.vocabuliary_dict_to_idx["<start>"]] + [0 for _ in range(x_test.shape[1]-1)]]).long()
 
+model.eval()
 output = torch.argmax(model(x_test, y_test), -1)
 print(tokenizer_model.decode_output(output))
