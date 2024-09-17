@@ -1,0 +1,1 @@
+https://huggingface.co/datasets/vidore/colpali_train_set/tree/main/data
