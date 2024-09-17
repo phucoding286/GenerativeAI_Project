@@ -43,7 +43,7 @@ ds = load_dataset(
     "Magpie-Align/Magpie-Qwen2-Pro-300K-Filtered",
     cache_dir="E:/datasets_dir"
 )
-num_samples = 15 # ds['train'].num_rows
+num_samples = 1000 # ds['train'].num_rows
 response_samples = ds['train'].select(range(num_samples))['response']
 instruction_samples = ds['train'].select(range(num_samples))['instruction']
 print(f"tổng lô dữ liệu là: {num_samples}")
@@ -56,15 +56,18 @@ tokenizer = AutoTokenizer.from_pretrained(
     cache_dir="E:/transformers_cache",
     token="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"
 )
+tokenizer.add_special_tokens({"bos_token": "<bos>"})
+
 def encode(batch, max_sequence_length, device, bos_token=True, eos_token=True):
     batch_encode = []
     for i in range(len(batch)):
-        token = tokenizer.encode(
+        tokens = tokenizer.encode(
             batch[i],
             add_special_tokens=True,
             padding=True,
             return_tensors="pt"
-        ).to(device)[0].tolist()
+        )[0].tolist()
+        token = [int(t) for t in tokens]
         if bos_token: token = [tokenizer.bos_token_id] + token
         if eos_token: token.append(tokenizer.eos_token_id)
         if len(token) > max_sequence_length: token = token[:max_sequence_length]
@@ -85,10 +88,7 @@ def padding_mask(inputs, padding, device):
 
 # khởi tạo mô hình
 class ModelT1(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.transformer_model = nn.Transformer(
-            d_model=512,
+    def __init__(self, d_model=512,
             nhead=8,
             num_encoder_layers=6,
             num_decoder_layers=6,
@@ -97,53 +97,72 @@ class ModelT1(nn.Module):
             activation=nn.functional.gelu,
             batch_first=True,
             norm_first=True,
+            sequence_length=20,
+            vocab_size=None,
+            padding_idx=None,
+            device=None):
+        super().__init__()
+        self.transformer_model = nn.Transformer(
+            d_model=d_model,
+            nhead=nhead,
+            num_encoder_layers=num_encoder_layers,
+            num_decoder_layers=num_decoder_layers,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation=activation,
+            batch_first=batch_first,
+            norm_first=norm_first,
             device=device
         )
         self.position_embedding = PositionalEmbedding(
-            sequence_length=20,
-            vocab_size=tokenizer.vocab_size+1,
-            embedding_dim=512,
-            dropout=0.1,
-            padding_idx=tokenizer.pad_token_id,
+            sequence_length=sequence_length,
+            vocab_size=vocab_size,
+            embedding_dim=d_model,
+            dropout=dropout,
+            padding_idx=padding_idx,
             device=device
         )
         self.linear_out = nn.Linear(
-            in_features=512,
-            out_features=tokenizer.vocab_size+1,
+            in_features=d_model,
+            out_features=vocab_size,
             device=device
         )
-    def forward(self, x, y, src_causal_mask=None, src_padding_mask=None,
-                tgt_causal_mask=None, tgt_padding_mask=None):
+        self.device = device
+
+    def forward(self, x, y):
+        tgt_mask = causal_mask(x.shape[1], device)
+        src_padding_mask = padding_mask(x, padding=tokenizer.pad_token_id, device=device)
+        tgt_padding_mask = padding_mask(y, padding=tokenizer.pad_token_id, device=device)
         x = self.position_embedding(x)
         y = self.position_embedding(y)
         out = self.transformer_model(
             src=x,
             tgt=y,
-            src_mask=src_causal_mask,
+            src_mask=None,
             src_key_padding_mask=src_padding_mask,
-            tgt_mask=tgt_causal_mask,
+            tgt_mask=tgt_mask,
             tgt_key_padding_mask=tgt_padding_mask,
             tgt_is_causal=True
-        )
+        ).to(self.device)
         out = self.linear_out(out)
-        return out
+        return out.to(self.device)
     
 max_sequence_length=20
 src = encode(instruction_samples, max_sequence_length, device, bos_token=False, eos_token=False)
 tgt = encode(response_samples, max_sequence_length, device, bos_token=True, eos_token=True)
 
-tgt_causal_mask = causal_mask(tgt.shape[1], device)
-src_padding_mask = padding_mask(src[:1], tokenizer.pad_token_id, device)
-tgt_padding_mask = padding_mask(tgt[:1], tokenizer.pad_token_id, device)
-
-model = ModelT1()
-outputs = model(
-    src[:1],
-    tgt[:1],
-    tgt_causal_mask=tgt_causal_mask,
-    tgt_padding_mask=tgt_padding_mask,
-    src_padding_mask=src_padding_mask
+model = ModelT1(
+    d_model=512,
+    nhead=8,
+    num_encoder_layers=6,
+    num_decoder_layers=6,
+    dim_feedforward=1024,
+    sequence_length=20,
+    vocab_size=tokenizer.vocab_size+5,
+    padding_idx=tokenizer.pad_token_id,
+    device=device
 )
+outputs = model(src[:1], tgt[:1])
 output_text_test = tokenizer.decode(torch.argmax(outputs, -1).tolist()[0])
 print(f"dự đoán đầu ra test của mô hình: {output_text_test}")
 print("-----------------------------------------------------------")
@@ -154,7 +173,7 @@ print("------------------------------------")
 
 from torch.utils.data import TensorDataset, DataLoader
 
-batch_size = 1
+batch_size = 64
 epochs = 20
 lr = 0.001
 model_saved_path = "./model.pt"
@@ -174,19 +193,9 @@ for epoch in range(epochs):
     for src_batch, tgt_batch in train_loader:
         (src_batch, tgt_batch) = (src_batch.long().to(device), tgt_batch.long().to(device))
         optimizer.zero_grad()
-        
-        tgt_mask = causal_mask(tgt_batch.shape[1], device)
-        src_padding_mask = padding_mask(src_batch, padding=tokenizer.pad_token_id, device=device)
-        tgt_padding_mask = padding_mask(tgt_batch, padding=tokenizer.pad_token_id, device=device)
 
-        y_pred = model(
-            src_batch,
-            tgt_batch,
-            tgt_causal_mask=tgt_mask,
-            src_padding_mask=src_padding_mask,
-            tgt_padding_mask=tgt_padding_mask
-        )
-        loss = criterion(y_pred.reshape(-1, tokenizer.vocab_size+1), tgt_batch.reshape(-1))
+        y_pred = model(src_batch, tgt_batch)
+        loss = criterion(y_pred.reshape(-1, tokenizer.vocab_size+5), tgt_batch.reshape(-1))
 
         loss.backward()
         optimizer.step()
@@ -200,9 +209,9 @@ for epoch in range(epochs):
     torch.save(model.state_dict(), model_saved_path)
 
     print("dự đoán đầu ra thử")
-    model.eval()
-    input_ids = tokenizer.encode(["hello how are you?"], add_special_tokens=False)
+    # model.eval()
     input_tgt = torch.tensor([[tokenizer.bos_token_id]+[0 for _ in range(max_sequence_length-1)]], device=device)
-    model_output = model(input_ids, input_tgt)
+    model_output = model(src[:1], tgt[:1])
     output = torch.argmax(model_output, -1)
-    print(tokenizer.decode(torch.argmax(outputs, -1).tolist()[0]))
+    print("y dự đoán:", tokenizer.decode(torch.argmax(outputs, -1).tolist()[0]))
+    print("y thực:", tokenizer.decode(tgt[:1].tolist()[0]))
