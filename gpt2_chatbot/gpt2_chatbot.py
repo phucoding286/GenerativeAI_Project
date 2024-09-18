@@ -47,10 +47,10 @@ def inference(msg, model, user_input: str, ai_name="bot", user_name="user"):
     msg.append({"role": ai_name, "content": model_text_output})
     return model_text_output
 
-ai_name = "Keqing"
-user_name = "Phú"
+ai_name = "Assistant"
+user_name = "User"
 msg = [
-    {"role": "system", "content": "You're Keqing! About you: Keqing (Chinese: 刻晴 Kèqíng) is a playable Electro character in Genshin Impact.\nAs the Yuheng of the Liyue Qixing, she is someone who seeks her own answers instead of idly letting chaos run amok in Liyue. She chooses her own path with her own power and ability, instead of letting the gods determine her fate."},
+    {"role": "system", "content": "You're AI asisstant"},
     {"role": ai_name, "content": "Hello! what are you doing? Can we conversing today?"}
 ]
 while True:
