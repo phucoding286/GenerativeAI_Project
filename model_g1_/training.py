@@ -10,11 +10,10 @@ ds = load_dataset(
     "Magpie-Align/Magpie-Qwen2-Pro-300K-Filtered",
     cache_dir="E:/datasets_dir"
 )
-num_samples = 64
+num_samples = 100
 response_samples = ds['train'].select(range(num_samples))['response']
 instruction_samples = ds['train'].select(range(num_samples))['instruction']
-noti=f"tổng lô dữ liệu là: {ds['train'].num_rows} nhưng chỉ dùng {num_samples}/{ds['train'].num_rows}"
-[print(noti)] + [print("-", end="") for _ in range(len(noti))] + [print()]
+print(f"tổng lô dữ liệu là: {ds['train'].num_rows} dùng {num_samples}/{ds['train'].num_rows}")
 
 
 # load tokenizer
@@ -23,27 +22,17 @@ tokenizer = AutoTokenizer.from_pretrained(
     cache_dir="E:/transformers_cache",
     token="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"
 )
-tokenizer.add_special_tokens({"bos_token": "<bos>"})
-
-# mã hóa lô
-def encode(batch, max_sequence_length, device, bos_token=True, eos_token=True):
-    batch_encode = []
-    for i in range(len(batch)):
-        token = tokenizer.encode(batch[i], return_tensors="pt").to(device)[0].tolist()
-        if bos_token: token = [tokenizer.bos_token_id] + token
-        if eos_token: token.append(tokenizer.eos_token_id)
-        if len(token) > max_sequence_length: token = token[:max_sequence_length]
-        else:
-            for _ in range(len(token), max_sequence_length): token.append(tokenizer.pad_token_id)
-        batch_encode.append(token)
-    batch_encode = torch.tensor(batch_encode, device=device)
-    return batch_encode
-
 
 # mã hóa các lô sang vector idx
-max_sequence_length=20
-src = encode(instruction_samples, max_sequence_length, device, bos_token=False, eos_token=False)
-tgt = encode(response_samples, max_sequence_length, device, bos_token=True, eos_token=True)
+samples = instruction_samples + response_samples
+data = tokenizer.batch_encode_plus(
+    instruction_samples,
+    add_special_tokens=True,
+    padding=True,
+    truncation=True,
+    max_length=200,
+    return_tensors="pt"
+)['input_ids'].to(device)
 
 # khởi tạo mô hình
 model = ModelG1(
@@ -53,19 +42,32 @@ model = ModelG1(
     dim_feedforward=2048,
     dropout=0.1,
     device=device,
-    max_sequence_length=max_sequence_length,
-    vocab_size=tokenizer.vocab_size+1
+    vocab_size=tokenizer.vocab_size+1,
+    pad_token_id=tokenizer.pad_token_id
 )
-# dự đoán thử
-outputs = model(src[:1])
-output_text_test = tokenizer.decode(torch.argmax(outputs, -1).tolist()[0])
-noti=f"dự đoán đầu ra test của mô hình: {output_text_test}"
-[print(noti)] + [print("-", end="") for _ in range(len(noti))] + [print()]
+
+# suy luận
+def inference(inp, max_new_token=128):
+    model.eval()
+    input_ids = tokenizer.batch_encode_plus(
+        [inp],
+        add_special_tokens=True,
+        padding=True,
+        truncation=True,
+        max_length=200,
+        return_tensors="pt"
+    )["input_ids"][0].tolist()
+    [input_ids.append(tokenizer.pad_token_id) for _ in range(max_new_token)]
+    input_ids = torch.tensor([input_ids]).to(device)
+    model_output = model(input_ids)
+    output = torch.argmax(model_output, -1)
+    outputs = tokenizer.decode(output.tolist()[0])
+    return outputs
+
+
 # in ra thông tin tham số mô hình
 pytorch_total_params = sum(p.numel() for p in model.parameters())
-noti=f"tổng tham số của mô hình là {pytorch_total_params}"
-[print(noti)] + [print("-", end="") for _ in range(len(noti))] + [print()]
-
+print(f"tổng tham số của mô hình là {pytorch_total_params}")
 
 # training
 from torch.utils.data import TensorDataset, DataLoader
@@ -77,8 +79,8 @@ lr = 0.001
 model_saved_path = "./model.pt"
 
 # chia dữ liệu
-train_dataset = TensorDataset(src, tgt)
-val_dataset = TensorDataset(src, tgt)
+train_dataset = TensorDataset(data)
+val_dataset = TensorDataset(data)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
@@ -91,33 +93,24 @@ for epoch in range(epochs):
     model.train()
     total_loss = 0
     step_counter = 0
-    for src_batch, tgt_batch in train_loader:
-        (src_batch, tgt_batch) = (src_batch.long().to(device), tgt_batch.long().to(device))
+    for batch in train_loader:
+        batch = batch[0].long().to(device)
         optimizer.zero_grad()
 
-        y_pred = model(src_batch)
-        loss = criterion(y_pred.reshape(-1, tokenizer.vocab_size+1), src_batch.reshape(-1))
+        y_pred = model(batch)
+        loss = criterion(y_pred.reshape(-1, tokenizer.vocab_size+1), batch.reshape(-1))
 
         loss.backward()
         optimizer.step()
         
         total_loss += loss.item()
-        noti=f"bước: {step_counter}/{len(val_loader)} với mất mát: {loss.item()}"
-        [print(noti)] + [print("_", end="") for _ in range(len(noti))] + [print()]
+        print(f"bước: {step_counter}/{len(val_loader)} với mất mát: {loss.item()}")
         step_counter += 1
 
-    noti=f"vòng lặp: {epoch} hoàn thành tất cả bước với mất mát trung bình: {total_loss / len(val_loader)}"
-    [print(noti)] + [print("_", end="") for _ in range(len(noti))] + [print()]
-    print("saved model:", model_saved_path)
-    # torch.save(model.state_dict(), model_saved_path)
+    print(f"vòng lặp: {epoch} hoàn thành tất cả bước với mất mát trung bình: {total_loss / len(val_loader)}")
 
-    noti="dự đoán đầu ra thử"
-    [print(noti)] + [print("-", end="") for _ in range(len(noti))] + [print()]
-    model.eval()
-    input_ids = encode(["Write a python script that accepts"], max_sequence_length, device, False, False)
-    model_output = model(input_ids)
-    output = torch.argmax(model_output, -1)
-    noti=tokenizer.decode(output.tolist()[0])
-    [print("y dự đoán:", noti)] + [print("-", end="") for _ in range(len(noti))] + [print()]
-    noti=instruction_samples[:1]
-    [print("y thực:", noti)] + [print("-", end="") for _ in range(len(noti[0]))] + [print()]
+    print("saved model:", model_saved_path)
+    torch.save(model.state_dict(), model_saved_path)
+
+    print("y dự đoán:", inference("Write a python script that accepts a", max_new_token=data.shape[1]))
+    print("y thực:", instruction_samples[:1])

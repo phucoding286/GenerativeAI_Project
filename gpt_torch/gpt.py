@@ -3,11 +3,10 @@ from torch import nn
 
 # embedding mã hóa vị trí  
 class PositionalEmbedding(nn.Module):
-    def __init__(self, max_sequence_length, vocab_size, embedding_dim,
+    def __init__(self, vocab_size, embedding_dim,
                  dropout=0.1, padding_idx=0, device: bool = None):
         super().__init__()
         self.embedding_dim = embedding_dim
-        self.max_sequence_length = max_sequence_length
         self.device = device
         
         self.positional_encoding_dropout = nn.Dropout(p=dropout)
@@ -18,7 +17,7 @@ class PositionalEmbedding(nn.Module):
             device=device
         )
 
-    def pos(self):
+    def pos(self, max_sequence_length):
         even_i = torch.arange(
             start=0,
             end=self.embedding_dim,
@@ -30,9 +29,9 @@ class PositionalEmbedding(nn.Module):
             even_i/self.embedding_dim
         )
         position = torch.arange(
-            self.max_sequence_length,
+            max_sequence_length,
             device=self.device
-        ).reshape(self.max_sequence_length, 1)
+        ).reshape(max_sequence_length, 1)
         even_PE = torch.sin(position / denominator)
         odd_PE = torch.cos(position / denominator)
         stacked = torch.stack(
@@ -48,7 +47,7 @@ class PositionalEmbedding(nn.Module):
 
     def forward(self, x):
         x = self.embedding(x)
-        out = self.positional_encoding_dropout(x + self.pos())
+        out = self.positional_encoding_dropout(x + self.pos(max_sequence_length=x.shape[1]))
         return out.to(self.device)
     
 
@@ -70,15 +69,13 @@ class GPT(nn.Module):
     """
     def __init__(self, d_model=512, nhead=8, num_layers=6, dim_feedforward=1024, dropout=0.1,
                 activation=nn.functional.relu, batch_first=True, norm_first=True, device=None,
-                max_sequence_length=200, vocab_size=None, pad_token_id=None):
+                vocab_size=None, pad_token_id=None):
         super().__init__()
         self.device = device
-        self.max_sequence_length = max_sequence_length
         self.vocab_size = vocab_size
         self.d_model = d_model
 
         self.position_embedding = PositionalEmbedding(
-            max_sequence_length=max_sequence_length,
             vocab_size=vocab_size,
             embedding_dim=d_model,
             dropout=dropout,
@@ -115,7 +112,7 @@ class GPT(nn.Module):
 
     def forward(self, x):
         mask = self.causal_mask(
-            self.max_sequence_length,
+            x.shape[1],
             device=self.device
         )
         src_key_padding_mask = self.create_key_padding_mask(
